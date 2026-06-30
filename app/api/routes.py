@@ -8,6 +8,7 @@ router = APIRouter()
 
 @router.get("/lang/{video_id}")
 def get_available_langs(video_id: str):
+    print("lang endpoint")
     api = YouTubeTranscriptApi()
     transcript_list = api.list(video_id)
 
@@ -24,4 +25,5 @@ def get_available_langs(video_id: str):
 
 @router.post("/transcript/{video_id}")
 def get_transcript(video_id: str, request: TranslateRequest):
+    print("transcript endpoint")
     return get_transcript_service(video_id, request)
