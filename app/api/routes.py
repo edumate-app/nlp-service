@@ -27,3 +27,7 @@ def get_available_langs(video_id: str):
 def get_transcript(video_id: str, request: TranslateRequest):
     print("transcript endpoint")
     return get_transcript_service(video_id, request)
+
+@router.get("/health")
+def health():
+    return {"status": "ok"}
