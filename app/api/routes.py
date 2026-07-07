@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from app.models.request_models import TranslateRequest
 from app.services.transcript_service import get_transcript_service
-from youtube_transcript_api import YouTubeTranscriptApi
+from app.core.ytdlp_transcript import YouTubeTranscriptApi
 
 router = APIRouter()
 
