@@ -8,6 +8,7 @@ import yt_dlp
 from yt_dlp.utils import DownloadError
 
 from app.utils.segment_utils import make_segment
+from app.utils.log_utils import log, log_error
 
 _LIST_CACHE: dict[str, tuple[float, "TranscriptList"]] = {}
 _LIST_CACHE_TTL_SECONDS = 300
@@ -236,6 +237,7 @@ class _TranscriptFetcher:
             return self._info
 
         url = f"https://www.youtube.com/watch?v={self.video_id}"
+        log(f"[_TranscriptFetcher._ensure_info] fetching info for {self.video_id}")
 
         try:
             self._ydl = yt_dlp.YoutubeDL(_YDL_OPTS)
@@ -243,12 +245,16 @@ class _TranscriptFetcher:
         except DownloadError as exc:
             message = str(exc).lower()
             if "unavailable" in message or "private" in message:
+                log_error(f"[_TranscriptFetcher._ensure_info] video unavailable: {self.video_id}", exc)
                 raise VideoUnavailable(str(exc)) from exc
+            log_error(f"[_TranscriptFetcher._ensure_info] yt-dlp error: {self.video_id}", exc)
             raise
 
         if not self._info:
+            log_error(f"[_TranscriptFetcher._ensure_info] empty info for {self.video_id}")
             raise VideoUnavailable(f"Video {self.video_id} is unavailable")
 
+        log(f"[_TranscriptFetcher._ensure_info] ok for {self.video_id}")
         return self._info
 
     def prefetch_tracks(self, transcripts: list["Transcript"]) -> None:
@@ -266,16 +272,34 @@ class _TranscriptFetcher:
         subtitle_format = _pick_subtitle_format(formats)
 
         if not subtitle_format or not subtitle_format.get("url"):
+            log("[_TranscriptFetcher._download_segments] no subtitle format/url found")
             return []
 
-        content = ydl.urlopen(subtitle_format["url"]).read().decode("utf-8", "replace")
-        return _parse_subtitle_content(content, subtitle_format.get("ext", "json3"))
+        try:
+            content = ydl.urlopen(subtitle_format["url"]).read().decode("utf-8", "replace")
+            segments = _parse_subtitle_content(content, subtitle_format.get("ext", "json3"))
+            log(f"[_TranscriptFetcher._download_segments] parsed {len(segments)} segments ({subtitle_format.get('ext')})")
+            return segments
+        except Exception as exc:
+            log_error("[_TranscriptFetcher._download_segments] download/parse failed", exc)
+            raise
 
     def build_transcript_list(self) -> TranscriptList:
+        log(f"[_TranscriptFetcher.build_transcript_list] {self.video_id}")
         info = self._ensure_info()
-        manual_subs = info.get("subtitles") or {}
+        manual_subs = {
+            language_code: formats
+            for language_code, formats in (info.get("subtitles") or {}).items()
+            if language_code != "live_chat"
+        }
         auto_subs = info.get("automatic_captions") or {}
         video_lang = info.get("language") or "en"
+        log(
+            f"[_TranscriptFetcher.build_transcript_list] "
+            f"manual={len(manual_subs)} langs={sorted(manual_subs)}, "
+            f"auto={len(auto_subs)} langs={sorted(auto_subs)}, "
+            f"video_lang={video_lang}"
+        )
 
         transcripts: list[Transcript] = []
 
@@ -307,21 +331,29 @@ class _TranscriptFetcher:
             )
 
         if not transcripts:
+            log_error(f"[_TranscriptFetcher.build_transcript_list] transcripts disabled: {self.video_id}")
             raise TranscriptsDisabled(
                 f"Transcripts are disabled for video {self.video_id}"
             )
 
+        log(f"[_TranscriptFetcher.build_transcript_list] {len(transcripts)} tracks available")
         transcript_list = TranscriptList(transcripts, self)
         return transcript_list
 
 
 class YouTubeTranscriptApi:
     def list(self, video_id: str) -> TranscriptList:
+        log(f"[YouTubeTranscriptApi.list] video_id={video_id}")
         now = time.time()
         cached = _LIST_CACHE.get(video_id)
         if cached and now - cached[0] < _LIST_CACHE_TTL_SECONDS:
+            log(f"[YouTubeTranscriptApi.list] cache hit for {video_id}")
             return cached[1]
 
-        transcript_list = _TranscriptFetcher(video_id).build_transcript_list()
-        _LIST_CACHE[video_id] = (now, transcript_list)
-        return transcript_list
+        try:
+            transcript_list = _TranscriptFetcher(video_id).build_transcript_list()
+            _LIST_CACHE[video_id] = (now, transcript_list)
+            return transcript_list
+        except Exception as exc:
+            log_error(f"[YouTubeTranscriptApi.list] failed for {video_id}", exc)
+            raise
