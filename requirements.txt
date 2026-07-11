@@ -4,4 +4,3 @@ pydantic==2.13.4
 deep-translator
 yt-dlp
 stanza
-string
