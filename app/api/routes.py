@@ -36,28 +36,25 @@ def analyze(lang : str,request : AnalyzeRequest ):
     
     for sentence in doc.sentences:
         for word in sentence.words:
-
+            features = {}
+            if word.feats:
+                for feature in word.feats.split("|"):
+                    key,value = feature.split("=")
+                    features[key] = value
             token = {
                 "text": word.text,
                 "infinitive": word.lemma,
                 "pos": word.upos
             }
+            if word.upos in ["VERB","AUX"]:
+                token["person"] = features.get("Person")
+                token["number"] = features.get("Number")
+                token["tense"] = features.get("Tense")
+                token["mood"] = features.get("Mood")
+                token["gender"] = features.get("Gender")
 
-            if word.upos == "VERB":
-                tense = None
-
-                if word.feats:
-                    for feature in word.feats.split("|"):
-                        if feature.startswith("Tense="):
-                            tense = feature.split("=")[1]
-
-                token["tense"] = tense
             tokens.append(token)
-
-    return {
-        "lang": lang,
-        "tokens": tokens
-    }
+    return tokens
 @router.get("/lang/{video_id}")
 def get_available_langs(video_id: str):
     print("lang endpoint")
