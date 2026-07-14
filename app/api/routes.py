@@ -4,9 +4,44 @@ from app.services.transcript_service import get_transcript_service
 from app.core.ytdlp_transcript import YouTubeTranscriptApi
 import stanza
 import string
+
+from yt_dlp import YoutubeDL
+
+from app.models.request_models import TranslateRequest
+from app.services.transcript_service import get_transcript_service
+from app.core.ytdlp_transcript import YouTubeTranscriptApi
+from app.utils.log_utils import log, log_error
+from math import gcd
+
+
 router = APIRouter()
 
-#pobieranie tego pipeline dla danego jezyka
+@router.get("/info/{video_id}")
+def get_video_info(video_id: str):
+    log(f"[GET /info/{video_id}] start")
+    url = f"https://www.youtube.com/watch?v={video_id}"
+
+    ydl_opts = {
+        "quiet": True,
+        "skip_download": True,
+    }
+
+    with YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=False)
+
+    return {
+        # "id": info.get("id"),
+        "title": info.get("title"),
+        "author": info.get("uploader"),
+        # "channel": info.get("channel"),
+        # "channel_id": info.get("channel_id"),
+        "duration": info.get("duration"),
+        # "thumbnail": info.get("thumbnail"),
+        # "upload_date": info.get("upload_date"),   
+        # "description": info.get("description"),
+        # "language": info.get("language"),
+    }
+
 pipelines = {}
 
 @router.post("/install/{lang}")
@@ -52,46 +87,10 @@ def analyze(lang : str,request : AnalyzeRequest ):
                 token["tense"] = features.get("Tense")
                 token["mood"] = features.get("Mood")
                 token["gender"] = features.get("Gender")
-from fastapi import APIRouter
-from yt_dlp import YoutubeDL
-
-from app.models.request_models import TranslateRequest
-from app.services.transcript_service import get_transcript_service
-from app.core.ytdlp_transcript import YouTubeTranscriptApi
-from app.utils.log_utils import log, log_error
-from math import gcd
-
-router = APIRouter()
-
-@router.get("/info/{video_id}")
-def get_video_info(video_id: str):
-    log(f"[GET /info/{video_id}] start")
-    url = f"https://www.youtube.com/watch?v={video_id}"
-
-    ydl_opts = {
-        "quiet": True,
-        "skip_download": True,
-    }
-
-    with YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=False)
-
-    return {
-        # "id": info.get("id"),
-        "title": info.get("title"),
-        "author": info.get("uploader"),
-        # "channel": info.get("channel"),
-        # "channel_id": info.get("channel_id"),
-        "duration": info.get("duration"),
-        # "thumbnail": info.get("thumbnail"),
-        # "upload_date": info.get("upload_date"),   
-        # "description": info.get("description"),
-        # "language": info.get("language"),
-    }
-
 
             tokens.append(token)
     return tokens
+
 @router.get("/lang/{video_id}")
 def get_available_langs(video_id: str):
     log(f"[GET /lang/{video_id}] start")
