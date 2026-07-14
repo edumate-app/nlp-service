@@ -6,3 +6,4 @@ class TranslateRequest(BaseModel):
     native_lang: str
 class AnalyzeRequest(BaseModel):
     text : str
+    lang: str

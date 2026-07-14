@@ -1,23 +1,49 @@
-from fastapi import APIRouter,HTTPException
+from fastapi import APIRouter,HTTPException,BackgroundTasks
 from app.models.request_models import TranslateRequest,AnalyzeRequest
 from app.services.transcript_service import get_transcript_service
-from app.core.ytdlp_transcript import YouTubeTranscriptApi
 import stanza
 import string
 
 from yt_dlp import YoutubeDL
 
-from app.models.request_models import TranslateRequest
-from app.services.transcript_service import get_transcript_service
 from app.core.ytdlp_transcript import YouTubeTranscriptApi
 from app.utils.log_utils import log, log_error
-from math import gcd
+
 
 
 router = APIRouter()
+install_status = {}
+def install_language(lang: str):
+
+    if install_status.get(lang) == "ready":
+        return
+
+    if install_status.get(lang) == "installing":
+        return
+
+    install_status[lang] = "installing"
+
+    try:
+        stanza.download(lang)
+
+        if lang not in pipelines:
+            pipelines[lang] = stanza.Pipeline(lang)
+
+        install_status[lang] = "ready"
+
+    except Exception:
+        install_status[lang] = "failed"
+        raise
+
+@router.get("/install/status/{lang}")
+def install_status_endpoint(lang: str):
+    return {
+        "language":lang,
+        "status":install_status.get(lang,"not_installed")
+    }
 
 @router.get("/info/{video_id}")
-def get_video_info(video_id: str):
+def get_video_info(video_id: str,backgroundtasks : BackgroundTasks):
     log(f"[GET /info/{video_id}] start")
     url = f"https://www.youtube.com/watch?v={video_id}"
 
@@ -28,7 +54,13 @@ def get_video_info(video_id: str):
 
     with YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=False)
+    
+    
+    language = info.get("language")
+    if install_status.get(language) != "ready":
+        backgroundtasks.add_task(install_language,language)
 
+    backgroundtasks.add_task(install_language,language)
     return {
         # "id": info.get("id"),
         "title": info.get("title"),
@@ -46,27 +78,18 @@ pipelines = {}
 
 @router.post("/install/{lang}")
 def install_lang(lang : str):
+    install_language(lang)
     
-    try:
-        stanza.download(lang)
-        if lang not in pipelines:
-            pipelines[lang] = stanza.Pipeline(lang)
 
-    except Exception as e:
-        
-        raise HTTPException(
-            status_code=500,
-            detail=str(e))
-
-@router.post("/analyze/")
-def analyze(lang : str,request : AnalyzeRequest ):
+@router.post("/analyze")
+def analyze(request : AnalyzeRequest):
     
-    if lang not in pipelines:
+    if request.lang not in pipelines:
         raise HTTPException(status_code=404)
     text = request.text.translate(
         str.maketrans("", "", string.punctuation)
     )
-    doc = pipelines[lang](text)
+    doc = pipelines[request.lang](text)
     tokens = []
     
     for sentence in doc.sentences:
