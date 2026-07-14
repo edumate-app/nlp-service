@@ -1,3 +1,57 @@
+from fastapi import APIRouter,HTTPException
+from app.models.request_models import TranslateRequest,AnalyzeRequest
+from app.services.transcript_service import get_transcript_service
+from app.core.ytdlp_transcript import YouTubeTranscriptApi
+import stanza
+import string
+router = APIRouter()
+
+#pobieranie tego pipeline dla danego jezyka
+pipelines = {}
+
+@router.post("/install/{lang}")
+def install_lang(lang : str):
+    
+    try:
+        stanza.download(lang)
+        if lang not in pipelines:
+            pipelines[lang] = stanza.Pipeline(lang)
+
+    except Exception as e:
+        
+        raise HTTPException(
+            status_code=500,
+            detail=str(e))
+
+@router.post("/analyze/")
+def analyze(lang : str,request : AnalyzeRequest ):
+    
+    if lang not in pipelines:
+        raise HTTPException(status_code=404)
+    text = request.text.translate(
+        str.maketrans("", "", string.punctuation)
+    )
+    doc = pipelines[lang](text)
+    tokens = []
+    
+    for sentence in doc.sentences:
+        for word in sentence.words:
+            features = {}
+            if word.feats:
+                for feature in word.feats.split("|"):
+                    key,value = feature.split("=")
+                    features[key] = value
+            token = {
+                "text": word.text,
+                "infinitive": word.lemma,
+                "pos": word.upos
+            }
+            if word.upos in ["VERB","AUX"]:
+                token["person"] = features.get("Person")
+                token["number"] = features.get("Number")
+                token["tense"] = features.get("Tense")
+                token["mood"] = features.get("Mood")
+                token["gender"] = features.get("Gender")
 from fastapi import APIRouter
 from yt_dlp import YoutubeDL
 
@@ -36,6 +90,8 @@ def get_video_info(video_id: str):
     }
 
 
+            tokens.append(token)
+    return tokens
 @router.get("/lang/{video_id}")
 def get_available_langs(video_id: str):
     log(f"[GET /lang/{video_id}] start")
@@ -72,6 +128,9 @@ def get_transcript(video_id: str, request: TranslateRequest):
     except Exception as exc:
         log_error(f"[POST /transcript/{video_id}] failed", exc)
         raise
+
+
+
 
 @router.get("/health")
 def health():
