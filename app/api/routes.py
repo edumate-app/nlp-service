@@ -101,7 +101,7 @@ def analyze(request : AnalyzeRequest):
                     features[key] = value
             token = {
                 "text": word.text,
-                "infinitive": word.lemma,
+                "lemma": word.lemma,
                 "pos": word.upos
             }
             if word.upos in ["VERB","AUX"]:
